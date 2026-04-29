@@ -8,7 +8,6 @@ st.markdown("""
 #### Upload business reports, research papers, or company data and ask questions to extract insights instantly
 """)
 
-from dotenv import load_dotenv
 from langchain_groq import ChatGroq
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_core.prompts import ChatPromptTemplate
@@ -18,9 +17,11 @@ from langchain_classic.chains.combine_documents import create_stuff_documents_ch
 from langchain_classic.chains import create_retrieval_chain
 from langchain_huggingface import HuggingFaceEmbeddings
 
-load_dotenv()
-GROQ_API_KEY=os.getenv("GROQ_API_KEY")
+# from dotenv import load_dotenv
+# load_dotenv()
+# GROQ_API_KEY=os.getenv("GROQ_API_KEY")
 
+GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 
 
 
