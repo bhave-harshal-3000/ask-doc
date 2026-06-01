@@ -39,20 +39,38 @@ def process_uploaded_files(uploaded_files):
     docs = []
 
     for uploaded_file in uploaded_files:
+        # Preserve the original uploaded filename for citations
+        filename = getattr(uploaded_file, "name", None) or "uploaded.pdf"
         # Save file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
             tmp_file.write(uploaded_file.read())
             tmp_path = tmp_file.name
 
         loader = PyPDFLoader(tmp_path)
-        docs.extend(loader.load())
+        loaded_docs = loader.load()
+        # remove the temporary file immediately after loading to avoid disk buildup
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+        # Replace the default 'source' (temp path) with the original filename
+        for doc in loaded_docs:
+            # keep page number if available in metadata
+            page = doc.metadata.get("page") or doc.metadata.get("page_number")
+            if page is not None:
+                doc.metadata["source"] = f"{filename} (page {page})"
+            else:
+                doc.metadata["source"] = filename
+
+        docs.extend(loaded_docs)
 
     return docs
 
-llm = ChatGroq(
-    api_key=GROQ_API_KEY,
-    model="llama-3.3-70b-versatile"
-)
+def get_llm():
+    # Create or return a per-session LLM client to avoid shared mutable state
+    if "llm" not in st.session_state:
+        st.session_state.llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.3-70b-versatile")
+    return st.session_state.llm
  
 prompt = ChatPromptTemplate.from_template(
     """Answer the following questions based on the provided context only
@@ -92,11 +110,28 @@ if "vectors" in st.session_state:
 
 if user_input:
     if "vectors" in st.session_state:
+        # ensure each session has its own llm instance
+        llm = get_llm()
         document_chain=create_stuff_documents_chain(llm,prompt)
         retriever=st.session_state.vectors.as_retriever(search_type="mmr",search_kwargs={"k": 6, "fetch_k": 20})
         retriever_chain=create_retrieval_chain(retriever,document_chain)
         response=retriever_chain.invoke({"input":user_input})
-        st.write(response['answer'])
+        answer = response.get('answer', '')
+        st.write(answer)
+
+        # Build a deduplicated, ordered list of citations from retrieved context
+        citations = []
+        seen = set()
+        for doc in response.get("context", []):
+            src = doc.metadata.get("source", "Unknown")
+            if src not in seen:
+                citations.append(src)
+                seen.add(src)
+
+        if citations:
+            st.markdown("**Citations:**")
+            for i, c in enumerate(citations, start=1):
+                st.markdown(f"{i}. {c}")
     
     
         # With a streamlit expander
